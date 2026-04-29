@@ -1,0 +1,2 @@
+# Add to www-data crontab: `sudo crontab -u www-data -e`
+* * * * * cd /var/www/todo/current && php artisan schedule:run >> /var/log/ai-inbox/scheduler.log 2>&1
