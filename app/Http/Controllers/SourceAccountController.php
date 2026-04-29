@@ -6,6 +6,7 @@ use App\Jobs\SyncSourceAccountJob;
 use App\Models\SourceAccount;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Socialite\Facades\Socialite;
@@ -148,5 +149,125 @@ class SourceAccountController extends Controller
         );
 
         return redirect()->route('sources.index')->with('status', 'Gmail connected as ' . $email);
+    }
+
+    /**
+     * Generic token-based connect for Slack / Telegram / monday.com / Wrike.
+     * Validates the token against the provider's whoami endpoint, then upserts
+     * a SourceAccount with the credentials encrypted in the JSON column.
+     */
+    public function connectToken(Request $request, string $type): RedirectResponse
+    {
+        $allowed = [
+            SourceAccount::TYPE_SLACK,
+            SourceAccount::TYPE_TELEGRAM,
+            SourceAccount::TYPE_MONDAY,
+            SourceAccount::TYPE_WRIKE,
+        ];
+        abort_unless(in_array($type, $allowed, true), 404);
+
+        $request->validate(['token' => 'required|string|min:10|max:512']);
+        $token = trim((string) $request->input('token'));
+
+        try {
+            [$identifier, $name, $extra] = match ($type) {
+                SourceAccount::TYPE_SLACK    => $this->probeSlack($token),
+                SourceAccount::TYPE_TELEGRAM => $this->probeTelegram($token),
+                SourceAccount::TYPE_MONDAY   => $this->probeMonday($token),
+                SourceAccount::TYPE_WRIKE    => $this->probeWrike($token),
+            };
+        } catch (\Throwable $e) {
+            return back()->withErrors(['source' => ucfirst($type) . ' connect failed: ' . $e->getMessage()]);
+        }
+
+        SourceAccount::updateOrCreate(
+            [
+                'user_id'    => auth()->id(),
+                'type'       => $type,
+                'identifier' => $identifier,
+            ],
+            [
+                'name'        => $name,
+                'credentials' => array_merge(['token' => $token], $extra),
+                'enabled'     => true,
+            ],
+        );
+
+        return redirect()->route('sources.index')->with('status', ucfirst($type) . ' connected: ' . $identifier);
+    }
+
+    /** @return array{0:string,1:string,2:array} */
+    protected function probeSlack(string $token): array
+    {
+        $res = Http::asForm()->post('https://slack.com/api/auth.test', ['token' => $token])->json();
+        if (! ($res['ok'] ?? false)) {
+            throw new \RuntimeException($res['error'] ?? 'invalid token');
+        }
+        $team = (string) ($res['team'] ?? 'workspace');
+        $user = (string) ($res['user'] ?? 'bot');
+        $id   = (string) ($res['team_id'] ?? $team);
+        return [$id, "Slack \u{2013} {$team} (@{$user})", [
+            'team'    => $team,
+            'team_id' => $id,
+            'user'    => $user,
+            'user_id' => $res['user_id'] ?? null,
+        ]];
+    }
+
+    /** @return array{0:string,1:string,2:array} */
+    protected function probeTelegram(string $token): array
+    {
+        $res = Http::get("https://api.telegram.org/bot{$token}/getMe")->json();
+        if (! ($res['ok'] ?? false)) {
+            throw new \RuntimeException($res['description'] ?? 'invalid bot token');
+        }
+        $bot = $res['result'] ?? [];
+        $username = (string) ($bot['username'] ?? 'bot');
+        $id = (string) ($bot['id'] ?? $username);
+        return ['@' . $username, "Telegram \u{2013} @{$username}", [
+            'bot_id'    => $id,
+            'username'  => $username,
+            'first_name'=> $bot['first_name'] ?? null,
+        ]];
+    }
+
+    /** @return array{0:string,1:string,2:array} */
+    protected function probeMonday(string $token): array
+    {
+        $res = Http::withHeaders([
+            'Authorization' => $token,
+            'API-Version'   => '2024-01',
+        ])->post('https://api.monday.com/v2', [
+            'query' => '{ me { id name email } }',
+        ])->json();
+
+        $me = $res['data']['me'] ?? null;
+        if (! $me) {
+            throw new \RuntimeException($res['errors'][0]['message'] ?? 'invalid API token');
+        }
+        $email = (string) ($me['email'] ?? $me['id']);
+        return [$email, "monday.com \u{2013} " . ($me['name'] ?? $email), [
+            'user_id' => $me['id'] ?? null,
+            'email'   => $email,
+        ]];
+    }
+
+    /** @return array{0:string,1:string,2:array} */
+    protected function probeWrike(string $token): array
+    {
+        $res = Http::withToken($token)
+            ->get('https://www.wrike.com/api/v4/contacts', ['me' => 'true'])
+            ->json();
+
+        $me = $res['data'][0] ?? null;
+        if (! $me) {
+            throw new \RuntimeException($res['errorDescription'] ?? 'invalid permanent token');
+        }
+        $email = (string) ($me['profiles'][0]['email'] ?? $me['id']);
+        $name  = trim(($me['firstName'] ?? '') . ' ' . ($me['lastName'] ?? '')) ?: $email;
+        return [$email, "Wrike \u{2013} {$name}", [
+            'user_id' => $me['id'] ?? null,
+            'email'   => $email,
+        ]];
     }
 }

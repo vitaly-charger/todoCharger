@@ -41,6 +41,9 @@ Route::middleware(['auth', 'allowed'])->group(function () {
     Route::post('/sources', [SourceAccountController::class, 'store'])->name('sources.store');
     Route::get('/sources/gmail/connect', [SourceAccountController::class, 'connectGmail'])->name('sources.gmail.connect');
     Route::get('/sources/gmail/callback', [SourceAccountController::class, 'connectGmailCallback'])->name('sources.gmail.callback');
+    Route::post('/sources/{type}/connect-token', [SourceAccountController::class, 'connectToken'])
+        ->whereIn('type', ['slack', 'telegram', 'monday', 'wrike'])
+        ->name('sources.connect-token');
     Route::get('/sources/{source}', [SourceAccountController::class, 'show'])->name('sources.show');
     Route::patch('/sources/{source}', [SourceAccountController::class, 'update'])->name('sources.update');
     Route::delete('/sources/{source}', [SourceAccountController::class, 'destroy'])->name('sources.destroy');

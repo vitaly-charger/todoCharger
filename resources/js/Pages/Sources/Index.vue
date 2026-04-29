@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
 import Button from '@/Components/inbox/Button.vue';
@@ -26,11 +26,50 @@ const TYPE_DESC = {
   monday: 'Pull assigned items from your monday.com boards.',
   wrike: 'Pull assigned tasks from your Wrike spaces.',
 };
-// Sources with a real OAuth flow:
+// gmail = full OAuth; others = paste a personal/bot token (validated server-side).
 const HAS_OAUTH = { gmail: true };
+const TOKEN_HELP = {
+  slack: {
+    label: 'Slack Bot User OAuth Token',
+    placeholder: 'xoxb-…',
+    hint: 'Create a Slack app, add scopes (channels:history, im:history, users:read), install to workspace, then copy "Bot User OAuth Token".',
+    href: 'https://api.slack.com/apps',
+  },
+  telegram: {
+    label: 'Telegram Bot Token',
+    placeholder: '123456:ABC-DEF…',
+    hint: 'Create a bot via @BotFather and paste the HTTP API token. Add the bot to chats you want to monitor.',
+    href: 'https://t.me/BotFather',
+  },
+  monday: {
+    label: 'monday.com API Token',
+    placeholder: 'eyJhbGciOi…',
+    hint: 'monday.com → Avatar → Developers → My Access Tokens → copy your personal API token.',
+    href: 'https://monday.com/developers/v2',
+  },
+  wrike: {
+    label: 'Wrike Permanent Access Token',
+    placeholder: 'eyJ0…',
+    hint: 'Wrike → Apps & Integrations → API → Create new permanent token.',
+    href: 'https://www.wrike.com/frontend/apps/index.html#/api',
+  },
+};
 
 const showAdd = ref(false);
-const form = useForm({ type: 'slack', name: '', identifier: '', enabled: true });
+const open = reactive({}); // per-type expand state for token form
+const tokenForms = reactive({});
+function tokenForm(type) {
+  if (!tokenForms[type]) tokenForms[type] = useForm({ token: '' });
+  return tokenForms[type];
+}
+function submitToken(type) {
+  tokenForm(type).post(`/sources/${type}/connect-token`, {
+    preserveScroll: true,
+    onSuccess: () => { tokenForm(type).reset(); open[type] = false; },
+  });
+}
+
+const form = useForm({ type: 'manual', name: '', identifier: '', enabled: true });
 function submit() {
   form.post('/sources', {
     onSuccess: () => { form.reset(); showAdd.value = false; },
@@ -91,8 +130,7 @@ function fmtDate(d) {
             <div class="text-[11.5px] text-fg-subtle leading-snug">{{ TYPE_DESC[t] }}</div>
           </div>
           <Badge v-if="(groups[t]?.length || 0) > 0" variant="success" size="xs" dot>Connected</Badge>
-          <Badge v-else-if="HAS_OAUTH[t]" variant="neutral" size="xs">Not connected</Badge>
-          <Badge v-else variant="outline" size="xs">Coming soon</Badge>
+          <Badge v-else variant="neutral" size="xs">Not connected</Badge>
         </div>
 
         <ul v-if="groups[t]?.length" class="flex flex-col gap-1.5">
@@ -117,9 +155,35 @@ function fmtDate(d) {
               {{ (groups[t]?.length || 0) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
             </Button>
           </a>
-          <Button v-else variant="secondary" size="sm" icon="link" full-width disabled>
-            Connect (coming soon)
-          </Button>
+          <template v-else>
+            <Button v-if="!open[t]" variant="primary" size="sm" icon="link" full-width @click="open[t] = true">
+              {{ (groups[t]?.length || 0) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
+            </Button>
+            <form v-else @submit.prevent="submitToken(t)" class="flex flex-col gap-2 pt-1">
+              <label class="flex flex-col gap-1">
+                <span class="text-[10.5px] font-semibold text-fg-subtle uppercase tracking-[0.05em]">
+                  {{ TOKEN_HELP[t].label }}
+                </span>
+                <input
+                  v-model="tokenForm(t).token"
+                  type="password" autocomplete="off" required
+                  :placeholder="TOKEN_HELP[t].placeholder"
+                  class="h-8 px-2 bg-bg-sunken border border-border rounded-md text-[12.5px] font-mono focus:border-border-focus outline-none"
+                />
+              </label>
+              <p class="text-[11px] text-fg-faint leading-snug">
+                {{ TOKEN_HELP[t].hint }}
+                <a :href="TOKEN_HELP[t].href" target="_blank" rel="noopener" class="text-accent-fg hover:underline">Open</a>
+              </p>
+              <p v-if="tokenForm(t).errors.token" class="text-[11px] text-urgent-fg">{{ tokenForm(t).errors.token }}</p>
+              <div class="flex items-center gap-2">
+                <Button type="submit" variant="primary" size="sm" :disabled="tokenForm(t).processing" icon="check">
+                  {{ tokenForm(t).processing ? 'Connecting…' : 'Connect' }}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" @click="open[t] = false">Cancel</Button>
+              </div>
+            </form>
+          </template>
         </div>
       </div>
     </div>
