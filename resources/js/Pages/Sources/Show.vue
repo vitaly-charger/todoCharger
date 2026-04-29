@@ -1,110 +1,95 @@
 <script setup>
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
 import Button from '@/Components/inbox/Button.vue';
 import Badge from '@/Components/inbox/Badge.vue';
-import SourceBadge from '@/Components/inbox/SourceBadge.vue';
+import SourceGlyph from '@/Components/inbox/SourceGlyph.vue';
+import Icon from '@/Components/inbox/Icon.vue';
+
+defineOptions({ layout: InboxLayout });
 
 const props = defineProps({ account: Object, recent_logs: Array });
-defineOptions({ layout: InboxLayout });
 
 const form = useForm({
   name: props.account.name,
   identifier: props.account.identifier,
   enabled: props.account.enabled,
-  settings: props.account.settings || {},
-  credentials: {},
 });
-const settingsRaw = ref(JSON.stringify(props.account.settings || {}, null, 2));
-const credsRaw = ref('');
-
-function save() {
-  let settings, credentials;
-  try { settings = settingsRaw.value ? JSON.parse(settingsRaw.value) : {}; }
-  catch (e) { alert('Settings: invalid JSON'); return; }
-  try { credentials = credsRaw.value ? JSON.parse(credsRaw.value) : null; }
-  catch (e) { alert('Credentials: invalid JSON'); return; }
-
-  const payload = { name: form.name, identifier: form.identifier, enabled: form.enabled, settings };
-  if (credentials !== null) payload.credentials = credentials;
-  router.patch(`/sources/${props.account.id}`, payload, { preserveScroll: true });
+function save() { form.patch('/sources/' + props.account.id, { preserveScroll: true }); }
+function sync() { router.post('/sources/' + props.account.id + '/sync'); }
+function destroy() {
+  if (confirm('Disconnect this source? Linked tasks will remain.')) router.delete('/sources/' + props.account.id);
 }
-function sync() { router.post(`/sources/${props.account.id}/sync`); }
-function toggle() { router.post(`/sources/${props.account.id}/toggle`); }
-function destroy() { if (confirm('Delete?')) router.delete(`/sources/${props.account.id}`); }
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 </script>
 
 <template>
   <Head :title="account.name" />
-  <div class="page">
-    <header class="page-header">
-      <Link href="/sources" class="link-muted">← Sources</Link>
-      <div class="actions">
-        <Button @click="sync">Sync now</Button>
-        <Button @click="toggle">{{ account.enabled ? 'Disable' : 'Enable' }}</Button>
-        <Button variant="danger" @click="destroy">Delete</Button>
+  <div class="px-8 py-6 flex flex-col gap-5 max-w-[1000px]">
+    <nav class="text-[11.5px] text-fg-subtle flex items-center gap-1.5">
+      <Link href="/sources" class="hover:text-fg">Sources</Link>
+      <Icon name="chevronRight" :size="12" />
+      <span class="capitalize">{{ account.type }}</span>
+    </nav>
+
+    <header class="flex items-center gap-3">
+      <SourceGlyph :source="account.type" :size="28" />
+      <div class="flex-1">
+        <h1 class="text-[18px] font-semibold tracking-tight3">{{ account.name }}</h1>
+        <p class="text-[12.5px] text-fg-muted">
+          <span class="capitalize">{{ account.type }}</span>
+          <span v-if="account.identifier"> &middot; {{ account.identifier }}</span>
+          &middot; {{ account.tasks_count }} tasks &middot; {{ account.messages_count }} messages
+        </p>
       </div>
+      <Badge :variant="account.enabled ? 'success' : 'neutral'" size="sm" dot>
+        {{ account.enabled ? 'Active' : 'Paused' }}
+      </Badge>
+      <Button variant="secondary" size="sm" icon="refresh" @click="sync">Sync now</Button>
+      <Button variant="ghost" size="sm" icon="trash" @click="destroy" />
     </header>
 
-    <Card>
-      <div class="head">
-        <SourceBadge :type="account.type" />
-        <h1>{{ account.name }}</h1>
-        <Badge size="sm" :variant="account.enabled ? 'success' : 'neutral'">{{ account.enabled ? 'On' : 'Off' }}</Badge>
-      </div>
-      <p class="muted small">{{ account.messages_count }} messages · {{ account.tasks_count }} tasks</p>
-    </Card>
-
-    <Card>
-      <h3>Configuration</h3>
-      <div class="form">
-        <label>Name<input v-model="form.name" class="ix-input" /></label>
-        <label>Identifier<input v-model="form.identifier" class="ix-input" /></label>
-        <label>Settings (JSON)<textarea v-model="settingsRaw" rows="8" class="ix-input mono" /></label>
-        <label>Credentials (JSON, leave blank to keep existing)
-          <textarea v-model="credsRaw" rows="6" class="ix-input mono" placeholder='{"api_token": "..."}' />
+    <Card title="Connection settings">
+      <form @submit.prevent="save" class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Name</span>
+          <input v-model="form.name" class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px]" />
         </label>
-        <div class="actions"><Button variant="primary" @click="save">Save</Button></div>
-      </div>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Identifier</span>
+          <input v-model="form.identifier" class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px]" />
+        </label>
+        <label class="inline-flex items-center gap-2 h-9 text-[12.5px] text-fg-muted">
+          <input type="checkbox" v-model="form.enabled" class="rounded border-border" />
+          Enabled
+        </label>
+        <Button type="submit" variant="primary" size="sm" icon="check" :disabled="form.processing">Save</Button>
+      </form>
     </Card>
 
-    <Card>
-      <h3>Recent syncs</h3>
-      <table class="ix-table">
-        <thead><tr><th>Started</th><th>Status</th><th>Imported</th><th>Created</th><th>Error</th></tr></thead>
-        <tbody>
-          <tr v-for="l in recent_logs" :key="l.id">
-            <td>{{ l.started_at }}</td>
-            <td><Badge size="sm" :variant="l.status === 'success' ? 'success' : (l.status === 'failed' ? 'urgent' : 'info')">{{ l.status }}</Badge></td>
-            <td>{{ l.imported_count }}</td>
-            <td>{{ l.created_task_count }}</td>
-            <td class="err">{{ l.error_message || '—' }}</td>
-          </tr>
-          <tr v-if="recent_logs.length === 0"><td colspan="5" class="empty">No syncs yet.</td></tr>
-        </tbody>
-      </table>
+    <Card title="Recent sync activity" :padded="false">
+      <ul v-if="recent_logs.length" class="flex flex-col">
+        <li v-for="log in recent_logs" :key="log.id"
+            class="grid items-center gap-3 px-5 py-2.5 border-b border-border last:border-0"
+            style="grid-template-columns: 90px 1fr 90px 130px">
+          <Badge :variant="log.status === 'failed' ? 'urgent' : log.status === 'success' ? 'success' : 'neutral'" size="xs" dot>
+            {{ log.status }}
+          </Badge>
+          <span class="text-[12.5px] text-fg truncate">{{ log.error_message || ('Imported ' + (log.imported_count ?? 0) + ', created ' + (log.created_task_count ?? 0)) }}</span>
+          <span class="text-[11.5px] text-fg-subtle font-mono tabular-nums">
+            {{ log.imported_count ?? 0 }}/{{ log.created_task_count ?? 0 }}
+          </span>
+          <span class="text-[11px] text-fg-subtle font-mono">{{ fmtDate(log.created_at) }}</span>
+        </li>
+      </ul>
+      <div v-else class="px-5 py-10 text-center text-fg-subtle text-[12.5px]">
+        No syncs yet. Trigger one with &ldquo;Sync now&rdquo;.
+      </div>
     </Card>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; }
-.link-muted { color: var(--fg-muted); font-size: 13px; }
-.actions { display: flex; gap: 8px; }
-.head { display: flex; align-items: center; gap: 8px; }
-.head h1 { font-size: 18px; font-weight: 600; margin: 0; }
-.muted.small { color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; }
-.form { display: flex; flex-direction: column; gap: 10px; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
-.ix-input { padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--bg-elev); font-size: 13px; color: var(--fg); font-family: inherit; }
-.ix-input.mono { font-family: var(--font-mono); font-size: 12px; }
-h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
-.ix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.ix-table th, .ix-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
-.ix-table th { font-weight: 500; color: var(--fg-subtle); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-.empty { color: var(--fg-subtle); text-align: center; padding: 16px; }
-.err { color: var(--urgent-fg); font-size: 11px; }
-</style>

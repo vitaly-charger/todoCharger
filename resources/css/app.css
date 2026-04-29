@@ -1,7 +1,7 @@
+@import "./inbox.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import "./inbox.css";
 
 html, body { background: var(--bg); color: var(--fg); }

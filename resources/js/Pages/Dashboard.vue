@@ -1,12 +1,20 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
+import Stat from '@/Components/inbox/Stat.vue';
 import Badge from '@/Components/inbox/Badge.vue';
-import SourceBadge from '@/Components/inbox/SourceBadge.vue';
 import PriorityBadge from '@/Components/inbox/PriorityBadge.vue';
+import SourceBadge from '@/Components/inbox/SourceBadge.vue';
+import SourceGlyph from '@/Components/inbox/SourceGlyph.vue';
+import Confidence from '@/Components/inbox/Confidence.vue';
+import Icon from '@/Components/inbox/Icon.vue';
+import Button from '@/Components/inbox/Button.vue';
 
-defineProps({
+defineOptions({ layout: InboxLayout });
+
+const props = defineProps({
   stats: Object,
   recent_ai_tasks: Array,
   needs_review: Array,
@@ -17,127 +25,154 @@ defineProps({
   ai_logs_count: Number,
 });
 
-defineOptions({ layout: InboxLayout });
+const user = computed(() => usePage().props.auth?.user);
+const greeting = computed(() => {
+  const h = new Date().getHours();
+  return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+});
+
+function fmtDate(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 </script>
 
 <template>
   <Head title="Dashboard" />
-  <div class="page">
-    <header class="page-header">
-      <h1>Dashboard</h1>
-      <p class="muted">Your inbox at a glance.</p>
+  <div class="px-8 py-7 flex flex-col gap-6 max-w-[1200px]">
+    <header class="flex items-end justify-between gap-4 flex-wrap">
+      <div>
+        <h1 class="text-[20px] font-semibold tracking-tight3">{{ greeting }}, {{ user?.name?.split(' ')[0] }}.</h1>
+        <p class="text-[13px] text-fg-muted mt-1">
+          Here&rsquo;s what your AI assistant pulled out of your inboxes today.
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <Link href="/sources"><Button variant="secondary" size="sm" icon="layers">Sources</Button></Link>
+        <Link href="/tasks/create"><Button variant="primary" size="sm" icon="plus">New task</Button></Link>
+      </div>
     </header>
 
-    <div class="stat-grid">
-      <Card>
-        <div class="stat-label">Open tasks</div>
-        <div class="stat-value">{{ stats.open_tasks }}</div>
-      </Card>
-      <Card>
-        <div class="stat-label">Urgent</div>
-        <div class="stat-value">{{ stats.urgent }}</div>
-      </Card>
-      <Card>
-        <div class="stat-label">Needs review</div>
-        <div class="stat-value">{{ stats.needs_review }}</div>
-      </Card>
-      <Card>
-        <div class="stat-label">Closed this week</div>
-        <div class="stat-value">{{ stats.closed_this_week }}</div>
-      </Card>
+    <!-- Stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <Stat label="Open tasks" :value="stats.open_tasks" icon="inbox" accent
+            :delta="stats.urgent + ' urgent'" delta-tone="down" />
+      <Stat label="Needs review" :value="stats.needs_review" icon="sparkle"
+            sub="AI flagged for your judgment" />
+      <Stat label="Closed this week" :value="stats.closed_this_week" icon="check"
+            delta-tone="up" />
+      <Stat label="Connected sources" :value="sources_count" icon="layers"
+            :sub="ai_logs_count + ' AI calls logged'" />
     </div>
 
-    <div class="grid-2">
-      <Card>
-        <div class="section-header">
-          <h2>Today</h2>
-          <Link href="/tasks" class="link-muted">All tasks →</Link>
+    <!-- AI-detected + by source -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <Card title="AI-detected today" class="xl:col-span-2">
+        <template #action>
+          <Link href="/tasks?needs_review=1" class="text-[12px] text-accent-fg font-medium hover:underline">
+            View all
+          </Link>
+        </template>
+        <ul v-if="recent_ai_tasks.length" class="flex flex-col">
+          <li
+            v-for="t in recent_ai_tasks" :key="t.id"
+            class="flex items-start gap-3 py-3 border-b border-border last:border-0"
+          >
+            <span class="mt-0.5 text-accent shrink-0"><Icon name="sparkle" :size="14" /></span>
+            <div class="flex-1 min-w-0">
+              <Link :href="'/tasks/' + t.id" class="block text-[13px] font-[550] text-fg hover:text-accent-fg truncate">
+                {{ t.title }}
+              </Link>
+              <p v-if="t.ai_summary" class="text-[12px] text-fg-muted mt-0.5 line-clamp-2 leading-snug">
+                {{ t.ai_summary }}
+              </p>
+              <div class="flex items-center gap-2 mt-1.5">
+                <SourceBadge :source="t.source_type" />
+                <PriorityBadge :level="t.priority" />
+                <Confidence v-if="t.ai_confidence" :value="Number(t.ai_confidence)" />
+              </div>
+            </div>
+          </li>
+        </ul>
+        <div v-else class="text-[12.5px] text-fg-subtle py-6 text-center">
+          No AI-detected tasks yet. Connect a source to get started.
         </div>
-        <div v-if="today.length === 0" class="empty">Nothing due today.</div>
-        <ul v-else class="task-list">
-          <li v-for="t in today" :key="t.id">
-            <Link :href="`/tasks/${t.id}`" class="task-row">
-              <PriorityBadge :priority="t.priority" />
-              <span class="task-title">{{ t.title }}</span>
-              <SourceBadge :type="t.source_type" />
-            </Link>
-          </li>
-        </ul>
       </Card>
 
-      <Card>
-        <div class="section-header"><h2>Needs review</h2></div>
-        <div v-if="needs_review.length === 0" class="empty">All clear.</div>
-        <ul v-else class="task-list">
-          <li v-for="t in needs_review" :key="t.id">
-            <Link :href="`/tasks/${t.id}`" class="task-row">
-              <Badge variant="review" size="sm">Review</Badge>
-              <span class="task-title">{{ t.title }}</span>
-              <SourceBadge :type="t.source_type" />
-            </Link>
+      <Card title="By source">
+        <template #action>
+          <Link href="/sources" class="text-[12px] text-accent-fg font-medium hover:underline">Manage</Link>
+        </template>
+        <ul v-if="by_source.length" class="flex flex-col gap-2.5">
+          <li v-for="row in by_source" :key="row.source_type"
+              class="flex items-center justify-between py-1">
+            <span class="flex items-center gap-2 text-[12.5px] text-fg">
+              <SourceGlyph :source="row.source_type" :size="16" />
+              <span class="capitalize">{{ row.source_type }}</span>
+            </span>
+            <span class="font-mono text-[12px] tabular-nums text-fg-subtle">{{ row.count }}</span>
           </li>
         </ul>
+        <div v-else class="text-[12.5px] text-fg-subtle py-4 text-center">
+          No tasks from sources yet.
+        </div>
       </Card>
     </div>
 
-    <div class="grid-2">
-      <Card>
-        <div class="section-header"><h2>Recent AI-created tasks</h2></div>
-        <div v-if="recent_ai_tasks.length === 0" class="empty">No AI tasks yet.</div>
-        <ul v-else class="task-list">
-          <li v-for="t in recent_ai_tasks" :key="t.id">
-            <Link :href="`/tasks/${t.id}`" class="task-row">
-              <SourceBadge :type="t.source_type" />
-              <span class="task-title">{{ t.title }}</span>
-              <span v-if="t.ai_confidence != null" class="muted small">{{ Math.round(t.ai_confidence * 100) }}%</span>
+    <!-- Needs review + Today -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <Card title="Needs your review" accent>
+        <template #action>
+          <Badge variant="review" size="xs" icon="sparkle">{{ stats.needs_review }} flagged</Badge>
+        </template>
+        <ul v-if="needs_review.length" class="flex flex-col">
+          <li v-for="t in needs_review" :key="t.id"
+              class="flex items-center gap-3 py-3 border-b border-border last:border-0">
+            <Link :href="'/tasks/' + t.id" class="flex-1 min-w-0 text-[13px] font-[550] text-fg hover:text-accent-fg truncate">
+              {{ t.title }}
             </Link>
+            <SourceBadge :source="t.source_type" />
+            <PriorityBadge :level="t.priority" />
           </li>
         </ul>
+        <div v-else class="text-[12.5px] text-fg-subtle py-6 text-center">
+          Nothing waiting for review &mdash; you&rsquo;re all caught up.
+        </div>
       </Card>
 
-      <Card>
-        <div class="section-header"><h2>Open by source</h2></div>
-        <ul class="task-list">
-          <li v-for="row in by_source" :key="row.source_type" class="src-row">
-            <SourceBadge :type="row.source_type" />
-            <span class="muted">{{ row.count }} open</span>
+      <Card title="Due today">
+        <template #action>
+          <span class="text-[11.5px] text-fg-subtle">{{ today.length }} item{{ today.length === 1 ? '' : 's' }}</span>
+        </template>
+        <ul v-if="today.length" class="flex flex-col">
+          <li v-for="t in today" :key="t.id"
+              class="flex items-center gap-3 py-3 border-b border-border last:border-0">
+            <Icon name="calendar" :size="14" class="text-fg-subtle shrink-0" />
+            <Link :href="'/tasks/' + t.id" class="flex-1 min-w-0 text-[13px] font-[550] text-fg hover:text-accent-fg truncate">
+              {{ t.title }}
+            </Link>
+            <PriorityBadge :level="t.priority" />
           </li>
-          <li v-if="by_source.length === 0" class="empty">No open tasks.</li>
         </ul>
+        <div v-else class="text-[12.5px] text-fg-subtle py-6 text-center">
+          Nothing scheduled for today.
+        </div>
       </Card>
     </div>
 
-    <Card v-if="failed_syncs.length">
-      <div class="section-header"><h2>Failed syncs</h2></div>
-      <ul class="task-list">
-        <li v-for="log in failed_syncs" :key="log.id" class="task-row">
-          <Badge variant="urgent" size="sm">Failed</Badge>
-          <span class="task-title">{{ log.source_type }}</span>
-          <span class="muted small">{{ log.error_message }}</span>
+    <Card v-if="failed_syncs.length" title="Sync issues">
+      <template #action>
+        <Link href="/logs/sync" class="text-[12px] text-accent-fg font-medium hover:underline">View logs</Link>
+      </template>
+      <ul class="flex flex-col">
+        <li v-for="log in failed_syncs" :key="log.id"
+            class="flex items-center gap-3 py-2.5 border-b border-border last:border-0">
+          <Badge variant="urgent" size="xs" icon="alert">Failed</Badge>
+          <span class="text-[12.5px] text-fg flex-1 truncate">{{ log.error_message || 'Sync error' }}</span>
+          <span class="text-[11px] text-fg-subtle font-mono">{{ fmtDate(log.created_at) }}</span>
         </li>
       </ul>
     </Card>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 20px; }
-.page-header h1 { font-size: 22px; font-weight: 600; margin: 0; }
-.muted { color: var(--fg-muted); }
-.muted.small { font-size: 12px; }
-.page-header p { color: var(--fg-muted); margin: 4px 0 0; }
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.stat-label { font-size: 12px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; }
-.stat-value { font-size: 28px; font-weight: 600; margin-top: 4px; }
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
-.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.section-header h2 { font-size: 14px; font-weight: 600; margin: 0; }
-.link-muted { color: var(--fg-muted); font-size: 12px; }
-.link-muted:hover { color: var(--fg); }
-.task-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.task-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: var(--r-sm); }
-.task-row:hover { background: var(--bg-hover); }
-.task-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.src-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-.empty { color: var(--fg-subtle); font-size: 13px; padding: 8px; }
-</style>

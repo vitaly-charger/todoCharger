@@ -1,43 +1,66 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
 import Badge from '@/Components/inbox/Badge.vue';
-import SourceBadge from '@/Components/inbox/SourceBadge.vue';
-defineProps({ logs: Object });
+import SourceGlyph from '@/Components/inbox/SourceGlyph.vue';
+import Icon from '@/Components/inbox/Icon.vue';
+
 defineOptions({ layout: InboxLayout });
+
+defineProps({ logs: Object });
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 </script>
 
 <template>
   <Head title="Sync logs" />
-  <div class="page">
-    <h1>Sync logs</h1>
-    <Card>
-      <table class="ix-table">
-        <thead><tr><th>Started</th><th>Source</th><th>Account</th><th>Status</th><th>Imported</th><th>Created</th><th>Error</th></tr></thead>
-        <tbody>
-          <tr v-for="l in logs.data" :key="l.id">
-            <td>{{ l.started_at }}</td>
-            <td><SourceBadge :type="l.source_type" /></td>
-            <td>{{ l.source_account?.name || '—' }}</td>
-            <td><Badge size="sm" :variant="l.status === 'success' ? 'success' : (l.status === 'failed' ? 'urgent' : 'info')">{{ l.status }}</Badge></td>
-            <td>{{ l.imported_count }}</td>
-            <td>{{ l.created_task_count }}</td>
-            <td class="err">{{ l.error_message || '' }}</td>
-          </tr>
-          <tr v-if="logs.data.length === 0"><td colspan="7" class="empty">No syncs yet.</td></tr>
-        </tbody>
-      </table>
+  <div class="px-8 py-6 flex flex-col gap-4 max-w-[1100px]">
+    <header>
+      <h1 class="text-[18px] font-semibold tracking-tight3 flex items-center gap-2">
+        <Icon name="refresh" :size="16" class="text-fg-subtle" />
+        Sync logs
+      </h1>
+      <p class="text-[12.5px] text-fg-muted mt-1">{{ logs.total }} entries</p>
+    </header>
+
+    <Card :padded="false">
+      <div class="grid items-center gap-3 px-5 py-2 text-[10.5px] font-semibold text-fg-faint uppercase tracking-[0.06em] border-b border-border"
+           style="grid-template-columns: 80px 1fr 90px 130px">
+        <span>Status</span>
+        <span>Source &middot; Detail</span>
+        <span>Imp / New</span>
+        <span>When</span>
+      </div>
+      <ul v-if="logs.data.length" class="flex flex-col">
+        <li v-for="log in logs.data" :key="log.id"
+            class="grid items-center gap-3 px-5 py-2 border-b border-border last:border-0 hover:bg-bg-hover"
+            style="grid-template-columns: 80px 1fr 90px 130px">
+          <Badge :variant="log.status === 'failed' ? 'urgent' : log.status === 'success' ? 'success' : 'neutral'" size="xs" dot>
+            {{ log.status }}
+          </Badge>
+          <div class="flex items-center gap-2 min-w-0">
+            <SourceGlyph v-if="log.source_account" :source="log.source_account.type" :size="14" />
+            <span class="text-[12.5px] text-fg truncate">
+              <span v-if="log.source_account" class="font-[550]">{{ log.source_account.name }}</span>
+              <span v-if="log.source_account" class="text-fg-subtle"> &middot; </span>
+              {{ log.error_message || ('Imported ' + (log.imported_count ?? 0) + ', created ' + (log.created_task_count ?? 0)) }}
+            </span>
+          </div>
+          <span class="text-[11.5px] font-mono text-fg-subtle tabular-nums">{{ log.imported_count ?? 0 }}/{{ log.created_task_count ?? 0 }}</span>
+          <span class="text-[11px] text-fg-subtle font-mono">{{ fmtDate(log.created_at) }}</span>
+        </li>
+      </ul>
+      <div v-else class="px-5 py-12 text-center text-fg-subtle text-[12.5px]">No sync activity yet.</div>
     </Card>
+
+    <div v-if="logs.last_page > 1" class="flex items-center justify-between text-[12px] text-fg-muted">
+      <Link v-if="logs.prev_page_url" :href="logs.prev_page_url" class="hover:text-fg">← Prev</Link><span v-else />
+      <span class="font-mono">{{ logs.from }}-{{ logs.to }} of {{ logs.total }}</span>
+      <Link v-if="logs.next_page_url" :href="logs.next_page_url" class="hover:text-fg">Next →</Link><span v-else />
+    </div>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-h1 { font-size: 22px; font-weight: 600; margin: 0; }
-.ix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.ix-table th, .ix-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
-.ix-table th { color: var(--fg-subtle); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-.err { color: var(--urgent-fg); font-size: 11px; }
-.empty { text-align: center; color: var(--fg-subtle); padding: 16px; }
-</style>

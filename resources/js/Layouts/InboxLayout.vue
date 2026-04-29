@@ -1,76 +1,187 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import Logo from '@/Components/inbox/Logo.vue';
+import Icon from '@/Components/inbox/Icon.vue';
+import Avatar from '@/Components/inbox/Avatar.vue';
+import KBD from '@/Components/inbox/KBD.vue';
+import Button from '@/Components/inbox/Button.vue';
+import SourceGlyph from '@/Components/inbox/SourceGlyph.vue';
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
+const sidebar = computed(() => page.props.sidebar || {});
 const flash = computed(() => page.props.flash || {});
 
-const nav = [
-  { label: 'Dashboard', href: '/dashboard', name: 'dashboard' },
-  { label: 'Tasks', href: '/tasks', name: 'tasks.index' },
-  { label: 'Sources', href: '/sources', name: 'sources.index' },
-  { label: 'AI Logs', href: '/logs/ai', name: 'logs.ai' },
-  { label: 'Sync Logs', href: '/logs/sync', name: 'logs.sync' },
-  { label: 'Settings', href: '/settings', name: 'settings' },
+const sidebarOpen = ref(true);
+const search = ref('');
+
+const STATUS_META = [
+  { key: 'inbox',       label: 'Inbox',       icon: 'inbox', href: '/tasks?status=inbox',       highlight: true },
+  { key: 'todo',        label: 'To Do',       icon: 'list',  href: '/tasks?status=todo' },
+  { key: 'in_progress', label: 'In Progress', icon: 'bolt',  href: '/tasks?status=in_progress' },
+  { key: 'waiting',     label: 'Waiting',     icon: 'clock', href: '/tasks?status=waiting' },
+  { key: 'done',        label: 'Done',        icon: 'check', href: '/tasks?status=done' },
+  { key: 'ignored',     label: 'Ignored',     icon: 'archive', href: '/tasks?status=ignored' },
 ];
 
+const SMART_VIEWS = [
+  { id: 'review', label: 'Needs review', icon: 'sparkle', href: '/tasks?needs_review=1', accent: true, key: 'review' },
+  { id: 'today',  label: 'Due today',    icon: 'calendar', href: '/tasks?due_today=1', key: 'today' },
+  { id: 'urgent', label: 'Urgent',       icon: 'flame',    href: '/tasks?priority=urgent', key: 'urgent' },
+];
+
+const SOURCES = [
+  { key: 'gmail',    label: 'Gmail',    href: '/tasks?source_type=gmail' },
+  { key: 'slack',    label: 'Slack',    href: '/tasks?source_type=slack' },
+  { key: 'telegram', label: 'Telegram', href: '/tasks?source_type=telegram' },
+  { key: 'manual',   label: 'Manual',   href: '/tasks?source_type=manual' },
+];
+
+const url = computed(() => page.url);
 function isActive(href) {
-  return page.url === href || page.url.startsWith(href + '/');
+  if (href.includes('?')) {
+    const [path, qs] = href.split('?');
+    return url.value.startsWith(path) && url.value.includes(qs);
+  }
+  return url.value === href || url.value.startsWith(href + '/');
 }
+
 function logout() { router.post('/logout'); }
+function newTask() { router.visit('/tasks/create'); }
+
+function submitSearch(e) {
+  e.preventDefault();
+  router.get('/tasks', { search: search.value }, { preserveState: true });
+}
 </script>
 
 <template>
-  <div class="app accent-amber">
-    <div class="ix-shell">
-      <aside class="ix-sidebar">
-        <div class="ix-brand">
-          <span class="ix-dot" />
-          <span>Inbox</span>
+  <div
+    class="grid h-screen w-screen overflow-hidden bg-bg text-fg"
+    :style="{
+      gridTemplateColumns: sidebarOpen ? '232px 1fr' : '56px 1fr',
+      gridTemplateRows: '52px 1fr',
+    }"
+  >
+    <!-- Topbar -->
+    <header
+      class="col-span-2 row-start-1 grid items-center bg-bg border-b border-border"
+      :style="{ gridTemplateColumns: sidebarOpen ? '232px 1fr auto' : '56px 1fr auto' }"
+    >
+      <div class="flex items-center h-full" :class="sidebarOpen ? 'pl-4' : 'justify-center'">
+        <Link href="/dashboard"><Logo :with-word="sidebarOpen" /></Link>
+      </div>
+      <div class="flex items-center gap-2.5 px-4 h-full">
+        <form @submit="submitSearch" class="flex items-center gap-2 h-[30px] px-2.5 flex-1 max-w-[520px] bg-bg-elev border border-border rounded-md text-fg-subtle">
+          <Icon name="search" :size="14" />
+          <input v-model="search" placeholder="Search tasks, sources, people…"
+            class="flex-1 border-0 outline-none bg-transparent text-[13px] text-fg placeholder:text-fg-subtle p-0 focus:ring-0" />
+          <KBD>⌘</KBD><KBD>K</KBD>
+        </form>
+      </div>
+      <div class="flex items-center gap-1.5 pr-3.5">
+        <Button variant="ghost" size="sm" icon="sparkles">Ask AI</Button>
+        <Button variant="ghost" size="sm" icon="bell" />
+        <Link href="/settings"><Button variant="ghost" size="sm" icon="settings" /></Link>
+        <span class="w-px h-5 bg-border mx-1" />
+        <button @click="logout" class="rounded-full" :title="(user?.name || '') + ' — sign out'">
+          <Avatar :name="user?.name || '?'" :size="26" />
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <nav class="row-start-2 col-start-1 bg-bg border-t border-border overflow-auto flex flex-col gap-[18px]"
+      :class="sidebarOpen ? 'px-2.5 py-3' : 'px-1.5 py-3'">
+      <Button v-if="sidebarOpen" variant="primary" size="sm" icon="plus" full-width @click="newTask">
+        New task
+      </Button>
+
+      <div class="flex flex-col gap-0.5">
+        <div v-if="sidebarOpen" class="text-[10px] font-semibold text-fg-faint tracking-[0.06em] uppercase px-2.5 pt-1.5 pb-1">
+          Statuses
         </div>
-        <nav class="ix-nav">
-          <Link v-for="item in nav" :key="item.href" :href="item.href"
-            class="ix-nav-link" :class="{ active: isActive(item.href) }">
-            {{ item.label }}
-          </Link>
-        </nav>
-        <div class="ix-user">
-          <div class="ix-user-name">{{ user?.name }}</div>
-          <div class="ix-user-email">{{ user?.email }}</div>
-          <button class="ix-logout" @click="logout">Sign out</button>
+        <Link v-for="s in STATUS_META" :key="s.key" :href="s.href" preserve-scroll
+          class="flex items-center gap-2 h-7 rounded-md cursor-pointer relative tracking-[-0.005em]"
+          :class="[
+            sidebarOpen ? 'px-2.5 text-[12.5px]' : 'justify-center text-[12.5px]',
+            isActive(s.href) ? 'bg-bg-active text-fg font-[550]' : 'text-fg-muted hover:bg-bg-hover hover:text-fg font-medium',
+          ]">
+          <span v-if="isActive(s.href)" class="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-accent rounded-full" />
+          <Icon :name="s.icon" :size="14" :class="s.highlight ? 'text-accent' : ''" />
+          <span v-if="sidebarOpen" class="flex-1 truncate">{{ s.label }}</span>
+          <span v-if="sidebarOpen && sidebar.statusCounts" class="font-mono text-[10.5px] text-fg-subtle tabular-nums">
+            {{ sidebar.statusCounts[s.key] ?? 0 }}
+          </span>
+        </Link>
+      </div>
+
+      <div class="flex flex-col gap-0.5">
+        <div v-if="sidebarOpen" class="text-[10px] font-semibold text-fg-faint tracking-[0.06em] uppercase px-2.5 pt-1.5 pb-1 flex items-center gap-1.5">
+          <Icon name="sparkle" :size="10" class="text-accent" />
+          Smart views
         </div>
-      </aside>
-      <main class="ix-main">
-        <div v-if="flash.status" class="ix-flash">{{ flash.status }}</div>
-        <slot />
-      </main>
-    </div>
+        <Link v-for="v in SMART_VIEWS" :key="v.id" :href="v.href" preserve-scroll
+          class="flex items-center gap-2 h-7 rounded-md cursor-pointer relative tracking-[-0.005em]"
+          :class="[
+            sidebarOpen ? 'px-2.5 text-[12.5px]' : 'justify-center text-[12.5px]',
+            isActive(v.href) ? 'bg-bg-active text-fg font-[550]' : 'text-fg-muted hover:bg-bg-hover hover:text-fg font-medium',
+          ]">
+          <Icon :name="v.icon" :size="14" :class="v.accent ? 'text-accent' : ''" />
+          <span v-if="sidebarOpen" class="flex-1 truncate">{{ v.label }}</span>
+          <span v-if="sidebarOpen && sidebar.smartCounts" class="font-mono text-[10.5px] tabular-nums"
+            :class="v.accent ? 'text-accent-fg bg-accent-soft px-1.5 rounded-full py-px' : 'text-fg-subtle'">
+            {{ sidebar.smartCounts[v.key] ?? 0 }}
+          </span>
+        </Link>
+      </div>
+
+      <div class="flex flex-col gap-0.5">
+        <div v-if="sidebarOpen" class="text-[10px] font-semibold text-fg-faint tracking-[0.06em] uppercase px-2.5 pt-1.5 pb-1">
+          Sources
+        </div>
+        <Link v-for="s in SOURCES" :key="s.key" :href="s.href" preserve-scroll
+          class="flex items-center gap-2 h-7 rounded-md cursor-pointer relative tracking-[-0.005em]"
+          :class="[
+            sidebarOpen ? 'px-2.5 text-[12.5px]' : 'justify-center text-[12.5px]',
+            isActive(s.href) ? 'bg-bg-active text-fg font-[550]' : 'text-fg-muted hover:bg-bg-hover hover:text-fg font-medium',
+          ]">
+          <SourceGlyph :source="s.key" :size="14" />
+          <span v-if="sidebarOpen" class="flex-1 truncate">{{ s.label }}</span>
+          <span v-if="sidebarOpen && sidebar.sourceCounts" class="font-mono text-[10.5px] text-fg-subtle tabular-nums">
+            {{ sidebar.sourceCounts[s.key] ?? 0 }}
+          </span>
+        </Link>
+      </div>
+
+      <div class="flex-1" />
+
+      <div v-if="sidebarOpen" class="bg-bg-elev border border-border rounded-lg p-3 text-[11.5px] text-fg-muted flex flex-col gap-2">
+        <div class="flex items-center gap-1.5 font-semibold text-fg">
+          <Icon name="sparkles" :size="13" class="text-accent" />
+          AI inbox triage
+        </div>
+        <div class="leading-snug">
+          <span v-if="sidebar.smartCounts">{{ sidebar.smartCounts.review || 0 }} need review. </span>
+          <span class="text-fg-subtle">Last sync {{ sidebar.lastSyncAt || 'never' }}.</span>
+        </div>
+        <div class="flex gap-1.5">
+          <Link href="/sources"><Button variant="secondary" size="xs" icon="refresh">Sources</Button></Link>
+          <Link href="/logs/sync"><Button variant="ghost" size="xs">Logs</Button></Link>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main -->
+    <main class="row-start-2 col-start-2 overflow-auto bg-bg border-t border-l border-border">
+      <div v-if="flash.status" class="mx-8 mt-4 px-3 py-2 rounded-md bg-success-soft text-success-fg text-sm">
+        {{ flash.status }}
+      </div>
+      <div v-if="flash.error" class="mx-8 mt-4 px-3 py-2 rounded-md bg-urgent-soft text-urgent-fg text-sm">
+        {{ flash.error }}
+      </div>
+      <slot />
+    </main>
   </div>
 </template>
-
-<style scoped>
-.ix-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-.ix-sidebar {
-  background: var(--bg-sunken);
-  border-right: 1px solid var(--border);
-  padding: 18px 14px;
-  display: flex; flex-direction: column; gap: 18px;
-}
-.ix-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; padding: 4px 8px; }
-.ix-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); display: inline-block; }
-.ix-nav { display: flex; flex-direction: column; gap: 2px; }
-.ix-nav-link {
-  padding: 7px 10px; border-radius: var(--r-sm);
-  color: var(--fg-muted); font-size: 13px; font-weight: 500;
-}
-.ix-nav-link:hover { background: var(--bg-hover); color: var(--fg); }
-.ix-nav-link.active { background: var(--accent-soft); color: var(--accent-fg); }
-.ix-user { margin-top: auto; padding: 10px; border-top: 1px solid var(--border); }
-.ix-user-name { font-size: 13px; font-weight: 500; }
-.ix-user-email { font-size: 11px; color: var(--fg-subtle); }
-.ix-logout { margin-top: 8px; font-size: 12px; color: var(--fg-muted); background: none; border: 0; cursor: pointer; padding: 0; }
-.ix-logout:hover { color: var(--fg); }
-.ix-main { padding: 24px 32px; max-width: 1400px; }
-.ix-flash { background: var(--success-soft); color: var(--success-fg); padding: 8px 12px; border-radius: var(--r-md); margin-bottom: 12px; font-size: 13px; }
-</style>

@@ -3,65 +3,80 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
 import Button from '@/Components/inbox/Button.vue';
+import Icon from '@/Components/inbox/Icon.vue';
 
-defineProps({ sourceAccounts: Array });
 defineOptions({ layout: InboxLayout });
 
+defineProps({ sourceAccounts: Array });
+
 const form = useForm({
-  title: '',
-  description: '',
-  status: 'todo',
-  priority: 'normal',
-  due_date: '',
+  title: '', description: '', priority: 'normal', status: 'inbox', due_date: null,
 });
+
 function submit() { form.post('/tasks'); }
 </script>
 
 <template>
   <Head title="New task" />
-  <div class="page">
-    <header class="page-header">
-      <Link href="/tasks" class="link-muted">← Tasks</Link>
-      <h1>New task</h1>
+  <div class="px-8 py-6 max-w-[680px] flex flex-col gap-5">
+    <header class="flex items-center justify-between">
+      <div>
+        <h1 class="text-[18px] font-semibold tracking-tight3">New task</h1>
+        <p class="text-[12.5px] text-fg-muted mt-1">Capture something that doesn&rsquo;t live in a connected source yet.</p>
+      </div>
+      <Link href="/tasks"><Button variant="ghost" size="sm" icon="x">Cancel</Button></Link>
     </header>
+
     <Card>
-      <form @submit.prevent="submit" class="form">
-        <label>Title<input v-model="form.title" required class="ix-input" /></label>
-        <label>Description<textarea v-model="form.description" rows="6" class="ix-input" /></label>
-        <div class="row">
-          <label>Status
-            <select v-model="form.status" class="ix-input">
-              <option v-for="s in ['inbox','todo','in_progress','waiting','done','ignored']" :key="s">{{ s }}</option>
+      <form @submit.prevent="submit" class="flex flex-col gap-4">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Title</span>
+          <input v-model="form.title" required maxlength="500"
+            class="h-9 px-3 bg-bg-sunken border border-border rounded-md text-[13.5px] text-fg focus:outline-none focus:border-border-focus" />
+          <span v-if="form.errors.title" class="text-[11.5px] text-urgent-fg">{{ form.errors.title }}</span>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Notes</span>
+          <textarea v-model="form.description" rows="5"
+            class="px-3 py-2 bg-bg-sunken border border-border rounded-md text-[13px] text-fg focus:outline-none focus:border-border-focus" />
+        </label>
+
+        <div class="grid grid-cols-3 gap-3">
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Status</span>
+            <select v-model="form.status"
+              class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px] text-fg focus:border-border-focus capitalize">
+              <option value="inbox">Inbox</option>
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="waiting">Waiting</option>
             </select>
           </label>
-          <label>Priority
-            <select v-model="form.priority" class="ix-input">
-              <option v-for="p in ['urgent','high','normal','low']" :key="p">{{ p }}</option>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Priority</span>
+            <select v-model="form.priority"
+              class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px] text-fg focus:border-border-focus capitalize">
+              <option value="low">Low</option>
+              <option value="normal">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
             </select>
           </label>
-          <label>Due
-            <input type="date" v-model="form.due_date" class="ix-input" />
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Due</span>
+            <input type="date" v-model="form.due_date"
+              class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px] text-fg focus:border-border-focus" />
           </label>
         </div>
-        <div class="actions">
-          <Button variant="primary" type="submit" :disabled="form.processing">Create task</Button>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <Link href="/tasks"><Button variant="ghost" size="md">Cancel</Button></Link>
+          <Button type="submit" variant="primary" size="md" icon="check" :disabled="form.processing">
+            Create task
+          </Button>
         </div>
-        <div v-if="form.errors.title" class="error">{{ form.errors.title }}</div>
       </form>
     </Card>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; max-width: 720px; }
-.page-header { display: flex; flex-direction: column; gap: 4px; }
-.link-muted { color: var(--fg-muted); font-size: 13px; }
-h1 { font-size: 22px; font-weight: 600; margin: 0; }
-.form { display: flex; flex-direction: column; gap: 12px; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
-.ix-input { padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--bg-elev); font-size: 13px; color: var(--fg); font-family: inherit; }
-.row { display: flex; gap: 8px; flex-wrap: wrap; }
-.row label { flex: 1; min-width: 140px; }
-.actions { display: flex; justify-content: flex-end; }
-.error { color: var(--urgent-fg); font-size: 12px; }
-</style>

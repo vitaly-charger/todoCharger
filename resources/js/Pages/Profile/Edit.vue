@@ -1,56 +1,38 @@
 <script setup>
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import DeleteUserForm from './Partials/DeleteUserForm.vue';
-import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
-import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
 import { Head } from '@inertiajs/vue3';
+import InboxLayout from '@/Layouts/InboxLayout.vue';
+import Card from '@/Components/inbox/Card.vue';
+import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
+import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
+import DeleteUserForm from './Partials/DeleteUserForm.vue';
 
-defineProps({
-    mustVerifyEmail: {
-        type: Boolean,
-    },
-    status: {
-        type: String,
-    },
-});
+defineOptions({ layout: InboxLayout });
+
+defineProps({ mustVerifyEmail: Boolean, status: String });
 </script>
 
 <template>
-    <Head title="Profile" />
+  <Head title="Profile" />
+  <div class="px-8 py-6 flex flex-col gap-5 max-w-[760px]">
+    <header>
+      <h1 class="text-[18px] font-semibold tracking-tight3">Profile</h1>
+      <p class="text-[12.5px] text-fg-muted mt-1">Manage your account, password, and data.</p>
+    </header>
 
-    <AuthenticatedLayout>
-        <template #header>
-            <h2
-                class="text-xl font-semibold leading-tight text-gray-800"
-            >
-                Profile
-            </h2>
-        </template>
+    <Card title="Profile information">
+      <UpdateProfileInformationForm
+        :must-verify-email="mustVerifyEmail"
+        :status="status"
+        class="max-w-xl"
+      />
+    </Card>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
-                    <UpdateProfileInformationForm
-                        :must-verify-email="mustVerifyEmail"
-                        :status="status"
-                        class="max-w-xl"
-                    />
-                </div>
+    <Card title="Update password">
+      <UpdatePasswordForm class="max-w-xl" />
+    </Card>
 
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
-                    <UpdatePasswordForm class="max-w-xl" />
-                </div>
-
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
-                    <DeleteUserForm class="max-w-xl" />
-                </div>
-            </div>
-        </div>
-    </AuthenticatedLayout>
+    <Card title="Delete account">
+      <DeleteUserForm class="max-w-xl" />
+    </Card>
+  </div>
 </template>
