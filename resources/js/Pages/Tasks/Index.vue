@@ -115,14 +115,14 @@ function dueClass(d) {
     <div class="px-8 py-3 flex items-center gap-2 flex-wrap border-b border-border">
       <select
         :value="filters.priority || ''" @change="(e) => applyFilter('priority', e.target.value)"
-        class="h-7 px-2 text-[12px] bg-bg-elev border border-border rounded-md text-fg-muted focus:border-border-focus capitalize"
+        class="h-7 pl-2 pr-7 text-[12px] bg-bg-elev border border-border rounded-md text-fg-muted focus:border-border-focus capitalize min-w-[120px]"
       >
         <option value="">Any priority</option>
         <option v-for="p in PRIORITIES.filter(Boolean)" :key="p" :value="p">{{ p }}</option>
       </select>
       <select
         :value="filters.source_type || ''" @change="(e) => applyFilter('source_type', e.target.value)"
-        class="h-7 px-2 text-[12px] bg-bg-elev border border-border rounded-md text-fg-muted focus:border-border-focus capitalize"
+        class="h-7 pl-2 pr-7 text-[12px] bg-bg-elev border border-border rounded-md text-fg-muted focus:border-border-focus capitalize min-w-[120px]"
       >
         <option value="">Any source</option>
         <option v-for="s in SOURCE_TYPES.filter(Boolean)" :key="s" :value="s">{{ s }}</option>
