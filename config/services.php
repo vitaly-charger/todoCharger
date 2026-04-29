@@ -41,4 +41,11 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL') . '/auth/google/callback'),
     ],
 
+    'telegram' => [
+        // From https://my.telegram.org → API development tools.
+        // Required for the "My account" connect flow (MTProto).
+        'api_id' => env('TELEGRAM_API_ID'),
+        'api_hash' => env('TELEGRAM_API_HASH'),
+    ],
+
 ];

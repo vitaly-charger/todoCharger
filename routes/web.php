@@ -44,6 +44,10 @@ Route::middleware(['auth', 'allowed'])->group(function () {
     Route::post('/sources/{type}/connect-token', [SourceAccountController::class, 'connectToken'])
         ->whereIn('type', ['slack', 'telegram', 'monday', 'wrike'])
         ->name('sources.connect-token');
+    Route::post('/sources/telegram/user/start',    [SourceAccountController::class, 'telegramUserStart'])->name('sources.telegram.user.start');
+    Route::post('/sources/telegram/user/code',     [SourceAccountController::class, 'telegramUserCode'])->name('sources.telegram.user.code');
+    Route::post('/sources/telegram/user/password', [SourceAccountController::class, 'telegramUserPassword'])->name('sources.telegram.user.password');
+    Route::delete('/sources/{source}/telegram/user', [SourceAccountController::class, 'telegramUserCancel'])->name('sources.telegram.user.cancel');
     Route::get('/sources/{source}', [SourceAccountController::class, 'show'])->name('sources.show');
     Route::patch('/sources/{source}', [SourceAccountController::class, 'update'])->name('sources.update');
     Route::delete('/sources/{source}', [SourceAccountController::class, 'destroy'])->name('sources.destroy');

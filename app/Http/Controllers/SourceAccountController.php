@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\SyncSourceAccountJob;
 use App\Models\SourceAccount;
+use App\Services\TelegramUserAuth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -22,12 +23,14 @@ class SourceAccountController extends Controller
             ->map(function (SourceAccount $a) {
                 $arr = $a->toArray();
                 $arr['connected'] = $this->isConnected($a);
+                $arr['mtproto_state'] = $a->credentials['mtproto_state'] ?? null;
                 return $arr;
             });
 
         return Inertia::render('Sources/Index', [
             'accounts' => $accounts,
             'types' => SourceAccount::TYPES,
+            'telegram_user_supported' => (bool) (config('services.telegram.api_id') && config('services.telegram.api_hash')),
         ]);
     }
 
@@ -37,6 +40,11 @@ class SourceAccountController extends Controller
         if (!is_array($c)) return false;
         if ($a->type === SourceAccount::TYPE_GMAIL) {
             return !empty($c['access_token']) || !empty($c['refresh_token']);
+        }
+        if ($a->type === SourceAccount::TYPE_TELEGRAM) {
+            // Bot token OR a fully-completed user-account login.
+            if (!empty($c['token'])) return true;
+            return ($c['mtproto'] ?? false) === true && ($c['mtproto_state'] ?? null) === 'connected';
         }
         return !empty($c['token']);
     }
@@ -284,5 +292,146 @@ class SourceAccountController extends Controller
             'user_id' => $me['id'] ?? null,
             'email'   => $email,
         ]];
+    }
+
+    /* ------------------------------------------------------------------
+     * Telegram user-account (MTProto) connect — multi-step flow.
+     *  POST /sources/telegram/user/start    { phone }       → SMS code sent
+     *  POST /sources/telegram/user/code     { code }        → ok or needs_password
+     *  POST /sources/telegram/user/password { password }    → done
+     * ------------------------------------------------------------------ */
+
+    public function telegramUserStart(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'phone' => 'required|string|min:5|max:32',
+        ]);
+        $phone = preg_replace('/[^\d+]/', '', $data['phone']) ?? '';
+        if ($phone === '') {
+            return back()->withErrors(['source' => 'Invalid phone number.']);
+        }
+
+        // Reuse any pending account for this user+phone, else create a placeholder.
+        $account = SourceAccount::firstOrCreate(
+            [
+                'user_id'    => auth()->id(),
+                'type'       => SourceAccount::TYPE_TELEGRAM,
+                'identifier' => $phone,
+            ],
+            [
+                'name'        => 'Telegram – ' . $phone,
+                'enabled'     => false,
+                'credentials' => [],
+            ],
+        );
+
+        try {
+            $auth = TelegramUserAuth::forAccountId($account->id);
+            $res = $auth->start($phone);
+        } catch (\Throwable $e) {
+            $account->delete();
+            return back()->withErrors(['source' => 'Telegram login failed: ' . $e->getMessage()]);
+        }
+
+        $account->update([
+            'credentials' => [
+                'mtproto'         => true,
+                'mtproto_state'   => 'awaiting_code',
+                'phone'           => $phone,
+                'phone_code_hash' => $res['phone_code_hash'] ?? null,
+            ],
+        ]);
+
+        return back()->with('status', 'SMS code sent to ' . $phone . '. Enter it below to finish login.');
+    }
+
+    public function telegramUserCode(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'account_id' => 'required|integer',
+            'code'       => 'required|string|min:3|max:32',
+        ]);
+        $account = SourceAccount::findOrFail($data['account_id']);
+        $this->authorizeAccount($account);
+
+        try {
+            $auth = TelegramUserAuth::forAccountId($account->id);
+            $res = $auth->submitCode(trim($data['code']));
+        } catch (\Throwable $e) {
+            return back()->withErrors(['source' => 'Code rejected: ' . $e->getMessage()]);
+        }
+
+        if (($res['status'] ?? '') === 'needs_password') {
+            $account->update([
+                'credentials' => array_merge($account->credentials ?? [], [
+                    'mtproto_state' => 'awaiting_password',
+                ]),
+            ]);
+            return back()->with('status', 'Two-factor password required.');
+        }
+
+        return $this->finalizeTelegramUser($account);
+    }
+
+    public function telegramUserPassword(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'account_id' => 'required|integer',
+            'password'   => 'required|string|min:1|max:512',
+        ]);
+        $account = SourceAccount::findOrFail($data['account_id']);
+        $this->authorizeAccount($account);
+
+        try {
+            $auth = TelegramUserAuth::forAccountId($account->id);
+            $auth->submitPassword($data['password']);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['source' => '2FA password rejected: ' . $e->getMessage()]);
+        }
+
+        return $this->finalizeTelegramUser($account);
+    }
+
+    public function telegramUserCancel(SourceAccount $source): RedirectResponse
+    {
+        $this->authorizeAccount($source);
+        try {
+            TelegramUserAuth::forAccountId($source->id)->logoutAndDelete();
+        } catch (\Throwable) {
+            // ignore
+        }
+        $source->delete();
+        return redirect()->route('sources.index')->with('status', 'Telegram login cancelled.');
+    }
+
+    protected function finalizeTelegramUser(SourceAccount $account): RedirectResponse
+    {
+        try {
+            $auth = TelegramUserAuth::forAccountId($account->id);
+            $self = $auth->me();
+        } catch (\Throwable $e) {
+            return back()->withErrors(['source' => 'Telegram session check failed: ' . $e->getMessage()]);
+        }
+
+        $username = $self['username'] ?? null;
+        $name = trim(($self['first_name'] ?? '') . ' ' . ($self['last_name'] ?? ''))
+            ?: ($username ? '@' . $username : ($self['phone'] ?? 'Telegram user'));
+        $identifier = $username ? '@' . $username : ($self['phone'] ?? (string) $self['id']);
+
+        $account->update([
+            'name'        => "Telegram \u{2013} {$name}",
+            'identifier'  => $identifier,
+            'enabled'     => true,
+            'credentials' => array_merge($account->credentials ?? [], [
+                'mtproto'        => true,
+                'mtproto_state'  => 'connected',
+                'tg_user_id'     => $self['id'] ?? null,
+                'tg_username'    => $username,
+                'tg_first_name'  => $self['first_name'] ?? null,
+                'phone_code_hash'=> null,
+            ]),
+        ]);
+
+        return redirect()->route('sources.index')->with('status', 'Telegram connected as ' . $name);
     }
 }
