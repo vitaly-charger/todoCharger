@@ -1,0 +1,82 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, bcmath, zip, intl, mysql
+          coverage: none
+
+      - name: Composer install (no-dev)
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Build assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync release to server
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          RELEASE="$(date +%Y%m%d%H%M%S)"
+          REMOTE_RELEASE="/var/www/todo/releases/${RELEASE}"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "sudo -u www-data mkdir -p ${REMOTE_RELEASE}"
+          rsync -az --delete \
+            --exclude='.git' --exclude='node_modules' --exclude='tests' \
+            --exclude='.env' --exclude='storage' \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:${REMOTE_RELEASE}/"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "sudo chown -R www-data:www-data ${REMOTE_RELEASE}"
+
+      - name: Activate release
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash <<'EOSH'
+          set -euo pipefail
+          RELEASE=$(ls -1t /var/www/todo/releases | head -n1)
+          R=/var/www/todo/releases/$RELEASE
+          sudo -u www-data ln -sfn /var/www/todo/shared/.env $R/.env
+          sudo -u www-data rm -rf $R/storage
+          sudo -u www-data ln -s /var/www/todo/shared/storage $R/storage
+          sudo -u www-data php $R/artisan migrate --force
+          sudo -u www-data php $R/artisan storage:link || true
+          sudo -u www-data php $R/artisan config:cache
+          sudo -u www-data php $R/artisan route:cache
+          sudo -u www-data php $R/artisan view:cache
+          sudo ln -sfn $R /var/www/todo/current
+          sudo systemctl reload php8.2-fpm
+          sudo supervisorctl restart ai-inbox-worker:*
+          # Keep the last 5 releases
+          cd /var/www/todo/releases && ls -1t | tail -n +6 | xargs -r sudo rm -rf
+          EOSH
