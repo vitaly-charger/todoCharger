@@ -9,6 +9,10 @@ concurrency:
   group: production
   cancel-in-progress: false
 
+env:
+  REMOTE_PATH: /home/admin/web/todo.chargeragency.com.ua/public_html
+  SHARED_PATH: /home/admin/web/todo.chargeragency.com.ua/private/shared
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,7 +22,7 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.3'
           extensions: mbstring, xml, curl, bcmath, zip, intl, mysql
           coverage: none
 
@@ -43,40 +47,42 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Sync release to server
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      - name: Ensure shared dirs on server
         run: |
-          RELEASE="$(date +%Y%m%d%H%M%S)"
-          REMOTE_RELEASE="/var/www/todo/releases/${RELEASE}"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "sudo -u www-data mkdir -p ${REMOTE_RELEASE}"
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash <<'EOSH'
+          set -euo pipefail
+          install -o admin -g admin -d /home/admin/web/todo.chargeragency.com.ua/private/shared/storage/{app/public,framework/{cache/data,sessions,views},logs}
+          install -o admin -g admin -d /home/admin/web/todo.chargeragency.com.ua/private/shared
+          test -f /home/admin/web/todo.chargeragency.com.ua/private/shared/.env || {
+            echo "[deploy] .env missing on server at /home/admin/web/todo.chargeragency.com.ua/private/shared/.env"; exit 1; }
+          EOSH
+
+      - name: Sync code to server
+        run: |
           rsync -az --delete \
-            --exclude='.git' --exclude='node_modules' --exclude='tests' \
-            --exclude='.env' --exclude='storage' \
-            ./ "$DEPLOY_USER@$DEPLOY_HOST:${REMOTE_RELEASE}/"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "sudo chown -R www-data:www-data ${REMOTE_RELEASE}"
+            --exclude='.git' --exclude='.github' --exclude='node_modules' \
+            --exclude='tests' --exclude='.env' --exclude='.env.*' \
+            --exclude='storage' --exclude='deploy' \
+            --rsync-path="sudo -u admin rsync" \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.REMOTE_PATH }}/
 
       - name: Activate release
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash <<'EOSH'
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash <<'EOSH'
           set -euo pipefail
-          RELEASE=$(ls -1t /var/www/todo/releases | head -n1)
-          R=/var/www/todo/releases/$RELEASE
-          sudo -u www-data ln -sfn /var/www/todo/shared/.env $R/.env
-          sudo -u www-data rm -rf $R/storage
-          sudo -u www-data ln -s /var/www/todo/shared/storage $R/storage
-          sudo -u www-data php $R/artisan migrate --force
-          sudo -u www-data php $R/artisan storage:link || true
-          sudo -u www-data php $R/artisan config:cache
-          sudo -u www-data php $R/artisan route:cache
-          sudo -u www-data php $R/artisan view:cache
-          sudo ln -sfn $R /var/www/todo/current
-          sudo systemctl reload php8.2-fpm
-          sudo supervisorctl restart ai-inbox-worker:*
-          # Keep the last 5 releases
-          cd /var/www/todo/releases && ls -1t | tail -n +6 | xargs -r sudo rm -rf
+          ROOT=/home/admin/web/todo.chargeragency.com.ua/public_html
+          SHARED=/home/admin/web/todo.chargeragency.com.ua/private/shared
+          chown -R admin:admin "$ROOT"
+          sudo -u admin ln -sfn "$SHARED/.env" "$ROOT/.env"
+          sudo -u admin rm -rf "$ROOT/storage"
+          sudo -u admin ln -sfn "$SHARED/storage" "$ROOT/storage"
+          cd "$ROOT"
+          sudo -u admin php artisan storage:link --force || true
+          sudo -u admin php artisan migrate --force
+          sudo -u admin php artisan config:cache
+          sudo -u admin php artisan route:cache
+          sudo -u admin php artisan view:cache
+          systemctl reload php8.3-fpm || true
+          systemctl reload apache2 || true
           EOSH

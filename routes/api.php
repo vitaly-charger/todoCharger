@@ -7,7 +7,7 @@ use App\Http\Controllers\Api\V1\TaskCommentController;
 use App\Http\Controllers\Api\V1\TaskController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->middleware('throttle:api')->group(function () {
+Route::prefix('v1')->name('api.v1.')->middleware('throttle:api')->group(function () {
     // Public auth
     Route::post('/auth/google', [AuthController::class, 'google']);
 
