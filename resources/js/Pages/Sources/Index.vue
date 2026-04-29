@@ -1,6 +1,6 @@
 <script setup>
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import InboxLayout from '@/Layouts/InboxLayout.vue';
 import Card from '@/Components/inbox/Card.vue';
 import Button from '@/Components/inbox/Button.vue';
@@ -11,14 +11,26 @@ import Icon from '@/Components/inbox/Icon.vue';
 defineOptions({ layout: InboxLayout });
 
 const props = defineProps({ accounts: Array, types: Array });
+const page = usePage();
+const flash = computed(() => page.props.flash || {});
+const errors = computed(() => page.props.errors || {});
 
 const TYPE_LABELS = {
   gmail: 'Gmail', slack: 'Slack', telegram: 'Telegram',
-  monday: 'monday.com', wrike: 'Wrike', manual: 'Manual',
+  monday: 'monday.com', wrike: 'Wrike',
 };
+const TYPE_DESC = {
+  gmail: 'Capture tasks from threads where you are addressed directly.',
+  slack: 'Surface DMs and @mentions that need action.',
+  telegram: 'Detect tasks from Telegram chats where you are mentioned.',
+  monday: 'Pull assigned items from your monday.com boards.',
+  wrike: 'Pull assigned tasks from your Wrike spaces.',
+};
+// Sources with a real OAuth flow:
+const HAS_OAUTH = { gmail: true };
 
 const showAdd = ref(false);
-const form = useForm({ type: 'gmail', name: '', identifier: '', enabled: true });
+const form = useForm({ type: 'slack', name: '', identifier: '', enabled: true });
 function submit() {
   form.post('/sources', {
     onSuccess: () => { form.reset(); showAdd.value = false; },
@@ -54,28 +66,68 @@ function fmtDate(d) {
           Connect inboxes and tools so your AI assistant can extract tasks automatically.
         </p>
       </div>
-      <Button variant="primary" size="sm" icon="plus" @click="showAdd = !showAdd">Add source</Button>
+      <Button variant="ghost" size="sm" icon="plus" @click="showAdd = !showAdd">
+        {{ showAdd ? 'Cancel' : 'Add manually' }}
+      </Button>
     </header>
 
-    <!-- Summary cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      <div v-for="t in ['gmail','slack','telegram','monday','wrike','manual']" :key="t"
-           class="bg-bg-elev border border-border rounded-lg p-4 flex items-center gap-3">
-        <SourceGlyph :source="t" :size="22" />
-        <div class="flex-1 min-w-0">
-          <div class="text-[12.5px] font-[550] text-fg capitalize">{{ TYPE_LABELS[t] }}</div>
-          <div class="text-[11px] text-fg-subtle">
-            {{ groups[t]?.length || 0 }} account{{ (groups[t]?.length || 0) === 1 ? '' : 's' }}
+    <div v-if="flash.status"
+         class="flex items-center gap-2 px-3 py-2 rounded-md bg-success-soft text-success-fg text-[12.5px] border border-success-soft">
+      <Icon name="check" :size="13" /> {{ flash.status }}
+    </div>
+    <div v-if="errors.source"
+         class="flex items-center gap-2 px-3 py-2 rounded-md bg-urgent-soft text-urgent-fg text-[12.5px] border border-urgent-soft">
+      <Icon name="alert" :size="13" /> {{ errors.source }}
+    </div>
+
+    <!-- Source connection cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div v-for="t in ['gmail','slack','telegram','monday','wrike']" :key="t"
+           class="bg-bg-elev border border-border rounded-lg p-4 flex flex-col gap-3">
+        <div class="flex items-start gap-3">
+          <SourceGlyph :source="t" :size="22" />
+          <div class="flex-1 min-w-0">
+            <div class="text-[13.5px] font-[550] text-fg">{{ TYPE_LABELS[t] }}</div>
+            <div class="text-[11.5px] text-fg-subtle leading-snug">{{ TYPE_DESC[t] }}</div>
           </div>
+          <Badge v-if="(groups[t]?.length || 0) > 0" variant="success" size="xs" dot>Connected</Badge>
+          <Badge v-else-if="HAS_OAUTH[t]" variant="neutral" size="xs">Not connected</Badge>
+          <Badge v-else variant="outline" size="xs">Coming soon</Badge>
         </div>
-        <Badge :variant="(groups[t]?.length || 0) > 0 ? 'success' : 'neutral'" size="xs">
-          {{ (groups[t]?.length || 0) > 0 ? 'Connected' : 'Off' }}
-        </Badge>
+
+        <ul v-if="groups[t]?.length" class="flex flex-col gap-1.5">
+          <li v-for="a in groups[t]" :key="a.id"
+              class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-bg-sunken border border-border">
+            <Link :href="'/sources/' + a.id" class="flex-1 min-w-0 text-[12.5px] text-fg hover:text-accent-fg truncate">
+              {{ a.identifier || a.name }}
+            </Link>
+            <span class="text-[11px] text-fg-subtle font-mono tabular-nums">{{ a.tasks_count }}</span>
+            <Badge :variant="a.enabled ? 'success' : 'neutral'" size="xs" dot>
+              {{ a.enabled ? 'On' : 'Off' }}
+            </Badge>
+            <button @click.prevent="sync(a.id)" class="text-fg-subtle hover:text-fg" title="Sync now">
+              <Icon name="refresh" :size="13" />
+            </button>
+          </li>
+        </ul>
+
+        <div>
+          <a v-if="HAS_OAUTH[t]" :href="'/sources/' + t + '/connect'" class="block">
+            <Button variant="primary" size="sm" icon="link" full-width>
+              {{ (groups[t]?.length || 0) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
+            </Button>
+          </a>
+          <Button v-else variant="secondary" size="sm" icon="link" full-width disabled>
+            Connect (coming soon)
+          </Button>
+        </div>
       </div>
     </div>
 
-    <!-- Add form -->
-    <Card v-if="showAdd" title="Connect a source">
+    <Card v-if="showAdd" title="Add a source manually">
+      <p class="text-[11.5px] text-fg-subtle -mt-1 mb-3">
+        For testing only. Real OAuth connect lives in the cards above &mdash; this just creates a placeholder row without credentials.
+      </p>
       <form @submit.prevent="submit" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
         <label class="flex flex-col gap-1">
           <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Type</span>
@@ -91,13 +143,12 @@ function fmtDate(d) {
           <span class="text-[11px] font-semibold text-fg-subtle uppercase tracking-[0.04em]">Identifier</span>
           <input v-model="form.identifier" placeholder="e.g. you@gmail.com" class="h-9 px-2.5 bg-bg-sunken border border-border rounded-md text-[13px]" />
         </label>
-        <Button type="submit" variant="primary" size="md" icon="link" :disabled="form.processing">Connect</Button>
+        <Button type="submit" variant="primary" size="md" icon="plus" :disabled="form.processing">Add</Button>
       </form>
     </Card>
 
-    <!-- Connected accounts -->
-    <Card title="Connected accounts" :padded="false">
-      <ul v-if="accounts.length" class="flex flex-col">
+    <Card v-if="accounts.length" title="All connected accounts" :padded="false">
+      <ul class="flex flex-col">
         <li v-for="a in accounts" :key="a.id"
             class="flex items-center gap-3 px-5 py-3 border-b border-border last:border-0">
           <SourceGlyph :source="a.type" :size="20" />
@@ -126,10 +177,6 @@ function fmtDate(d) {
           </Button>
         </li>
       </ul>
-      <div v-else class="px-5 py-12 text-center text-fg-subtle">
-        <Icon name="link" :size="28" class="mx-auto text-fg-faint" />
-        <p class="mt-3 text-[13px]">No sources yet. Connect one to start extracting tasks.</p>
-      </div>
     </Card>
   </div>
 </template>

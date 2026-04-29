@@ -8,6 +8,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Socialite\Facades\Socialite;
+use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirect;
 
 class SourceAccountController extends Controller
 {
@@ -86,5 +88,65 @@ class SourceAccountController extends Controller
     protected function authorizeAccount(SourceAccount $account): void
     {
         abort_if($account->user_id !== auth()->id(), 403);
+    }
+
+    /**
+     * Start Gmail OAuth (asks the user to grant gmail.readonly).
+     */
+    public function connectGmail(): SymfonyRedirect
+    {
+        return Socialite::driver('google')
+            ->redirectUrl(url('/sources/gmail/callback'))
+            ->scopes([
+                'openid', 'email', 'profile',
+                'https://www.googleapis.com/auth/gmail.readonly',
+            ])
+            ->with(['access_type' => 'offline', 'prompt' => 'consent'])
+            ->redirect();
+    }
+
+    /**
+     * Callback that stores the OAuth credentials on a SourceAccount.
+     */
+    public function connectGmailCallback(): RedirectResponse
+    {
+        try {
+            $googleUser = Socialite::driver('google')
+                ->redirectUrl(url('/sources/gmail/callback'))
+                ->user();
+        } catch (\Throwable $e) {
+            return redirect()->route('sources.index')->withErrors([
+                'source' => 'Gmail connect failed: ' . $e->getMessage(),
+            ]);
+        }
+
+        $email = (string) $googleUser->getEmail();
+        $expiresIn = (int) ($googleUser->expiresIn ?? 0);
+
+        SourceAccount::updateOrCreate(
+            [
+                'user_id' => auth()->id(),
+                'type' => SourceAccount::TYPE_GMAIL,
+                'identifier' => $email,
+            ],
+            [
+                'name' => 'Gmail – ' . $email,
+                'credentials' => [
+                    'access_token' => $googleUser->token,
+                    'refresh_token' => $googleUser->refreshToken,
+                    'expires_in' => $expiresIn,
+                    'expires_at' => $expiresIn > 0
+                        ? now()->addSeconds($expiresIn)->toIso8601String()
+                        : null,
+                    'scopes' => [
+                        'openid', 'email', 'profile',
+                        'https://www.googleapis.com/auth/gmail.readonly',
+                    ],
+                ],
+                'enabled' => true,
+            ],
+        );
+
+        return redirect()->route('sources.index')->with('status', 'Gmail connected as ' . $email);
     }
 }

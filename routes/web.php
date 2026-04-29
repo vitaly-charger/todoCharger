@@ -39,6 +39,8 @@ Route::middleware(['auth', 'allowed'])->group(function () {
 
     Route::get('/sources', [SourceAccountController::class, 'index'])->name('sources.index');
     Route::post('/sources', [SourceAccountController::class, 'store'])->name('sources.store');
+    Route::get('/sources/gmail/connect', [SourceAccountController::class, 'connectGmail'])->name('sources.gmail.connect');
+    Route::get('/sources/gmail/callback', [SourceAccountController::class, 'connectGmailCallback'])->name('sources.gmail.callback');
     Route::get('/sources/{source}', [SourceAccountController::class, 'show'])->name('sources.show');
     Route::patch('/sources/{source}', [SourceAccountController::class, 'update'])->name('sources.update');
     Route::delete('/sources/{source}', [SourceAccountController::class, 'destroy'])->name('sources.destroy');
