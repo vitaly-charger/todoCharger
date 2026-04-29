@@ -84,6 +84,20 @@ const groups = computed(() => {
   for (const a of props.accounts) (out[a.type] = out[a.type] || []).push(a);
   return out;
 });
+function connectedCount(t) {
+  return (groups.value[t] || []).filter(a => a.connected).length;
+}
+function connectAccount(a) {
+  if (HAS_OAUTH[a.type]) {
+    window.location.href = '/sources/' + a.type + '/connect';
+  } else {
+    open[a.type] = true;
+    setTimeout(() => {
+      const el = document.querySelector('[data-token-form="' + a.type + '"] input');
+      if (el) el.focus();
+    }, 0);
+  }
+}
 
 function fmtDate(d) {
   if (!d) return 'never';
@@ -129,7 +143,7 @@ function fmtDate(d) {
             <div class="text-[13.5px] font-[550] text-fg">{{ TYPE_LABELS[t] }}</div>
             <div class="text-[11.5px] text-fg-subtle leading-snug">{{ TYPE_DESC[t] }}</div>
           </div>
-          <Badge v-if="(groups[t]?.length || 0) > 0" variant="success" size="xs" dot>Connected</Badge>
+          <Badge v-if="connectedCount(t) > 0" variant="success" size="xs" dot>Connected</Badge>
           <Badge v-else variant="neutral" size="xs">Not connected</Badge>
         </div>
 
@@ -140,26 +154,33 @@ function fmtDate(d) {
               {{ a.identifier || a.name }}
             </Link>
             <span class="text-[11px] text-fg-subtle font-mono tabular-nums">{{ a.tasks_count }}</span>
-            <Badge :variant="a.enabled ? 'success' : 'neutral'" size="xs" dot>
-              {{ a.enabled ? 'On' : 'Off' }}
-            </Badge>
-            <button @click.prevent="sync(a.id)" class="text-fg-subtle hover:text-fg" title="Sync now">
-              <Icon name="refresh" :size="13" />
-            </button>
+            <template v-if="a.connected">
+              <Badge :variant="a.enabled ? 'success' : 'neutral'" size="xs" dot>
+                {{ a.enabled ? 'On' : 'Off' }}
+              </Badge>
+              <button @click.prevent="sync(a.id)" class="text-fg-subtle hover:text-fg" title="Sync now">
+                <Icon name="refresh" :size="13" />
+              </button>
+            </template>
+            <template v-else>
+              <Badge variant="warn" size="xs">Not connected</Badge>
+              <button @click.prevent="connectAccount(a)"
+                      class="text-[11px] font-semibold text-accent-fg hover:underline">Connect</button>
+            </template>
           </li>
         </ul>
 
         <div>
           <a v-if="HAS_OAUTH[t]" :href="'/sources/' + t + '/connect'" class="block">
             <Button variant="primary" size="sm" icon="link" full-width>
-              {{ (groups[t]?.length || 0) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
+              {{ connectedCount(t) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
             </Button>
           </a>
           <template v-else>
             <Button v-if="!open[t]" variant="primary" size="sm" icon="link" full-width @click="open[t] = true">
-              {{ (groups[t]?.length || 0) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
+              {{ connectedCount(t) > 0 ? 'Connect another account' : 'Connect ' + TYPE_LABELS[t] }}
             </Button>
-            <form v-else @submit.prevent="submitToken(t)" class="flex flex-col gap-2 pt-1">
+            <form v-else :data-token-form="t" @submit.prevent="submitToken(t)" class="flex flex-col gap-2 pt-1">
               <label class="flex flex-col gap-1">
                 <span class="text-[10.5px] font-semibold text-fg-subtle uppercase tracking-[0.05em]">
                   {{ TOKEN_HELP[t].label }}
@@ -221,10 +242,11 @@ function fmtDate(d) {
               <Link :href="'/sources/' + a.id" class="text-[13px] font-[550] text-fg hover:text-accent-fg truncate">
                 {{ a.name }}
               </Link>
-              <Badge :variant="a.enabled ? 'success' : 'neutral'" size="xs" dot>
+              <Badge v-if="!a.connected" variant="warn" size="xs">Not connected</Badge>
+              <Badge v-else :variant="a.enabled ? 'success' : 'neutral'" size="xs" dot>
                 {{ a.enabled ? 'Active' : 'Paused' }}
               </Badge>
-              <Badge v-if="a.last_sync_status === 'failed'" variant="urgent" size="xs" icon="alert">Failed</Badge>
+              <Badge v-if="a.connected && a.last_sync_status === 'failed'" variant="urgent" size="xs" icon="alert">Failed</Badge>
             </div>
             <div class="text-[11.5px] text-fg-subtle truncate mt-0.5">
               <span class="capitalize">{{ TYPE_LABELS[a.type] || a.type }}</span>
@@ -235,10 +257,13 @@ function fmtDate(d) {
           <span class="text-[11.5px] text-fg-subtle font-mono tabular-nums">
             {{ a.tasks_count }} tasks
           </span>
-          <Button variant="ghost" size="xs" icon="refresh" @click="sync(a.id)">Sync</Button>
-          <Button variant="ghost" size="xs" :icon="a.enabled ? 'pause' : 'check'" @click="toggle(a.id)">
-            {{ a.enabled ? 'Pause' : 'Enable' }}
-          </Button>
+          <template v-if="a.connected">
+            <Button variant="ghost" size="xs" icon="refresh" @click="sync(a.id)">Sync</Button>
+            <Button variant="ghost" size="xs" :icon="a.enabled ? 'pause' : 'check'" @click="toggle(a.id)">
+              {{ a.enabled ? 'Pause' : 'Enable' }}
+            </Button>
+          </template>
+          <Button v-else variant="primary" size="xs" icon="link" @click="connectAccount(a)">Connect</Button>
         </li>
       </ul>
     </Card>

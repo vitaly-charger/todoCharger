@@ -18,12 +18,27 @@ class SourceAccountController extends Controller
     {
         $accounts = SourceAccount::where('user_id', auth()->id())
             ->withCount(['messages', 'tasks'])
-            ->latest()->get();
+            ->latest()->get()
+            ->map(function (SourceAccount $a) {
+                $arr = $a->toArray();
+                $arr['connected'] = $this->isConnected($a);
+                return $arr;
+            });
 
         return Inertia::render('Sources/Index', [
             'accounts' => $accounts,
             'types' => SourceAccount::TYPES,
         ]);
+    }
+
+    private function isConnected(SourceAccount $a): bool
+    {
+        $c = $a->credentials ?? [];
+        if (!is_array($c)) return false;
+        if ($a->type === SourceAccount::TYPE_GMAIL) {
+            return !empty($c['access_token']) || !empty($c['refresh_token']);
+        }
+        return !empty($c['token']);
     }
 
     public function store(Request $request): RedirectResponse
