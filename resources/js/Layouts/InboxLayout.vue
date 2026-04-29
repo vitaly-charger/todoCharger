@@ -32,10 +32,12 @@ const SMART_VIEWS = [
 ];
 
 const SOURCES = [
-  { key: 'gmail',    label: 'Gmail',    href: '/tasks?source_type=gmail' },
-  { key: 'slack',    label: 'Slack',    href: '/tasks?source_type=slack' },
-  { key: 'telegram', label: 'Telegram', href: '/tasks?source_type=telegram' },
-  { key: 'manual',   label: 'Manual',   href: '/tasks?source_type=manual' },
+  { key: 'gmail',    label: 'Gmail',      href: '/tasks?source_type=gmail' },
+  { key: 'slack',    label: 'Slack',      href: '/tasks?source_type=slack' },
+  { key: 'telegram', label: 'Telegram',   href: '/tasks?source_type=telegram' },
+  { key: 'monday',   label: 'monday.com', href: '/tasks?source_type=monday' },
+  { key: 'wrike',    label: 'Wrike',      href: '/tasks?source_type=wrike' },
+  { key: 'manual',   label: 'Manual',     href: '/tasks?source_type=manual' },
 ];
 
 const url = computed(() => page.url);

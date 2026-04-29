@@ -14,7 +14,7 @@ const props = defineProps({ accounts: Array, types: Array });
 
 const TYPE_LABELS = {
   gmail: 'Gmail', slack: 'Slack', telegram: 'Telegram',
-  monday: 'Monday', wrike: 'Wrike', manual: 'Manual',
+  monday: 'monday.com', wrike: 'Wrike', manual: 'Manual',
 };
 
 const showAdd = ref(false);
@@ -58,8 +58,8 @@ function fmtDate(d) {
     </header>
 
     <!-- Summary cards -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div v-for="t in ['gmail','slack','telegram','manual']" :key="t"
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div v-for="t in ['gmail','slack','telegram','monday','wrike','manual']" :key="t"
            class="bg-bg-elev border border-border rounded-lg p-4 flex items-center gap-3">
         <SourceGlyph :source="t" :size="22" />
         <div class="flex-1 min-w-0">

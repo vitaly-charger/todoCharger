@@ -29,7 +29,7 @@ const STATUSES = [
 ];
 
 const PRIORITIES = ['', 'urgent', 'high', 'normal', 'low'];
-const SOURCE_TYPES = ['', 'gmail', 'slack', 'telegram', 'manual', 'monday', 'wrike'];
+const SOURCE_TYPES = ['', 'gmail', 'slack', 'telegram', 'monday', 'wrike', 'manual'];
 
 const search = ref(props.filters.search || '');
 let t;
